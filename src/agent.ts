@@ -2,42 +2,47 @@ import {
   Agent,
   AgentModenaUniversalRegistry,
   AgentModenaUniversalResolver,
-  FileSystemAgentSecureStorage,
-  FileSystemStorage,
   VerifiableCredential,
   WACICredentialOfferSucceded,
   WACIProtocol,
 } from "@extrimian/agent";
+import { FileSystemAgentSecureStorage } from "./storage/filesystem-secure-storage";
+import { FileSystemStorage } from "./storage/filesystem-storage";
 
+// export const QuarkIDEndpoint = "https://node-ssi.buenosaires.gob.ar";
+export const QuarkIDEndpoint = "https://demo.extrimian.com/sidetree-proxy";
 
-function createLocalAgent(waciProtocol: WACIProtocol, storageName: string): Agent {
-  const registry = new AgentModenaUniversalRegistry(
-    "http://modena.gcba-extrimian.com:8080"
-  );
-  registry.setDefaultDIDMethod("did:quarkid:matic");
+function createLocalAgent(
+  waciProtocol: WACIProtocol,
+  storageName: string
+): Agent {
+  const registry = new AgentModenaUniversalRegistry(QuarkIDEndpoint);
+  registry.setDefaultDIDMethod("did:quarkid:zksync");
+
   const agent = new Agent({
     didDocumentRegistry: registry,
-    didDocumentResolver: new AgentModenaUniversalResolver(
-      "http://modena.gcba-extrimian.com:8080"
-    ),
+    didDocumentResolver: new AgentModenaUniversalResolver(QuarkIDEndpoint),
     vcProtocols: [waciProtocol],
     secureStorage: new FileSystemAgentSecureStorage({
-      filepath: `storage/${storageName}_secure.json`,
+      filepath: `./data/${storageName}-agent-secure-storage.json`,
     }),
     agentStorage: new FileSystemStorage({
-      filepath: `storage/${storageName}.json`,
+      filepath: `./data/${storageName}-agent-storage.json`,
+    }),
+    vcStorage: new FileSystemStorage({
+      filepath: "./data/holder-vc-storage.json",
     }),
   });
 
   return agent;
 }
 
-export async function initializeAgents(){
+export async function initializeAgents() {
   //El agente necesita preconfigurar protocolos de intercambio de credenciales. En este instante se debe configurar también las credenciales que emitirá este agente.
   //Si el agente no va a recibir a emitir credenciales, no espera verificarlas ni recibirlas, no es necesario configurar el WACIProtocol. En ese caso se envía un objeto vacía en el constructor. Este escenario no suele ser útil, sin embargo, puede servir para probar el agente rápidamente.
   const issuerWaciProtocol = new WACIProtocol({
     issuer: {
-      issueCredentials: async (waciInvitationId: string, holderId: string) => {
+      issueCredentials: async (waciInvitationId: string, holderDID: string) => {
         return new WACICredentialOfferSucceded({
           credentials: [
             {
@@ -49,11 +54,11 @@ export async function initializeAgents(){
                 ],
                 id: "http://example.edu/credentials/58473",
                 type: ["VerifiableCredential", "AlumniCredential"],
-                issuer:
-                  "did:quarkid:starknet:EiCIBfgaePl4ESOOD-00GU8EAJSgwse1JDDIHYRz4aOtww",
+                issuer: agents[0].identity.getOperationalDID().value,
+                // "did:quarkid:starknet:EiCIBfgaePl4ESOOD-00GU8EAJSgwse1JDDIHYRz4aOtww",
                 issuanceDate: new Date(),
                 credentialSubject: {
-                  id: holderId,
+                  id: holderDID,
                   givenName: "John",
                   familyName: "Doe",
                 },
@@ -119,6 +124,9 @@ export async function initializeAgents(){
         });
       },
     },
+    storage: new FileSystemStorage({
+      filepath: "./data/issuer-waci-storage.json",
+    }),
   });
 
   const holderWaciProtocol = new WACIProtocol({
@@ -127,6 +135,9 @@ export async function initializeAgents(){
         return vcs;
       },
     },
+    storage: new FileSystemStorage({
+      filepath: "./data/holder-waci-storage.json",
+    }),
   });
 
   const verifierWaciProtocol = new WACIProtocol({
@@ -143,8 +154,8 @@ export async function initializeAgents(){
             credentialSubject: {
               "@explicit": true,
               type: ["AlumniCredential"],
-              givenName: {},
-              familyName: {},
+              givenName: "John",
+              familyName: "Doe",
             },
           },
           inputDescriptors: [
@@ -172,6 +183,9 @@ export async function initializeAgents(){
         };
       },
     },
+    storage: new FileSystemStorage({
+      filepath: "./data/verifier-waci-storage.json",
+    }),
   });
 
   //Crear una nueva instancia del agente, se deben pasar los protocolos a usar para la generación de VC (por ejemplo el WACIProtocol que definimos anteriormente)
@@ -181,15 +195,22 @@ export async function initializeAgents(){
   const agents = [issuerAgent, holderAgent, verifierAgent];
 
   //Siempre, en primer lugar, se debe inicializar el agente para comenzar a operar. Esto configura clases internas que son requeridas para funcionar.
-  await Promise.all(agents.map(async (agent) => agent.initialize()));
+  // await Promise.all(agents.map(async (agent) => agent.initialize()));
 
-  console.log("Waiting for agents to be ready");
-  const wait = async () => new Promise<void>((resolve, reject) => {
-    setTimeout(() => {
-        resolve();
-    }, 10000);
-  });
-  await wait();
+  // console.log("Waiting for agents to be ready");
+  // const wait = async () => new Promise<void>((resolve, reject) => {
+  //   setTimeout(() => {
+  //       resolve();
+  //   }, 10000);
+  // });
+  // await wait();
+
+  // return agents;
+
+  // Wait for each agent to finalize agent.initialize() async method
+  for (const agent of agents) {
+    await agent.initialize();
+  }
 
   return agents;
 }
